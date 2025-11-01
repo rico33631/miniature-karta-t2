@@ -21,7 +21,8 @@ app.use(cors({
   origin: 'http://localhost:5173',
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' })); // Increase limit for canvas snapshots
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 
 // Generate JWT token
@@ -218,6 +219,135 @@ app.get('/api/auth/me', verifyToken, async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+//Get Canvas info
+app.get('/api/canvases/:id', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const canvasId = req.params.id;
+
+    const { data: canvas, error } = await supabase
+      .from('tldraw_drawings')  
+      .select('*')
+      .eq('id', canvasId)
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !canvas) {
+      return res.status(404).json({ error: 'Canvas not found' }); 
+    }
+
+    res.json({ canvas });
+
+  } catch (error) {
+    console.error("Unable to retrieve canvas info:", error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+//New canvas
+app.post('/api/canvases', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { drawing_name } = req.body;
+
+    if (!drawing_name || drawing_name.trim() === '') {
+      return res.status(400).json({ error: 'Canvas name required' });
+    }
+
+    const { data: canvas, error } = await supabase
+      .from('tldraw_drawings')
+      .insert({
+        user_id: userId,
+        drawing_name: drawing_name.trim(),
+        snapshot: {} // Empty tldraw snapshot
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating canvas:', error);
+      return res.status(500).json({ error: 'Error creating canvas' });
+    }
+
+    res.status(201).json({ canvas });
+  } catch (error) {
+    console.error('Create canvas error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+//Update Canvas
+app.patch('/api/canvases/:id', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const canvasId = req.params.id;
+    const { snapshot, drawing_name } = req.body;
+
+    // Verify ownership
+    const { data: existing } = await supabase
+      .from('tldraw_drawings')
+      .select('id')
+      .eq('id', canvasId)
+      .eq('user_id', userId)
+      .single();
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Canvas not found' });
+    }
+
+    // Build update object with only provided fields
+    const updateData = {};
+    if (snapshot !== undefined) updateData.snapshot = snapshot;
+    if (drawing_name !== undefined) updateData.drawing_name = drawing_name.trim();
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    const { data: canvas, error } = await supabase
+      .from('tldraw_drawings')
+      .update(updateData)
+      .eq('id', canvasId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating canvas:', error);
+      return res.status(500).json({ error: 'Error updating canvas' });
+    }
+
+    res.json({ canvas });
+  } catch (error) {
+    console.error('Update canvas error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete canvas
+app.delete('/api/canvases/:id', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const canvasId = req.params.id;
+
+    const { error } = await supabase
+      .from('tldraw_drawings')
+      .delete()
+      .eq('id', canvasId)
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('Error deleting canvas:', error);
+      return res.status(500).json({ error: 'Error deleting canvas' });
+    }
+
+    res.json({ message: 'Canvas deleted successfully' });
+  } catch (error) {
+    console.error('Delete canvas error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 
 // Verify token endpoint
 app.get('/api/auth/verify', verifyToken, (req, res) => {

@@ -22,7 +22,7 @@ export default function Login() {
   };
 
   return (
-    <Container maxWidth="sm">
+    <Container>
       <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center' }}>
         <Paper sx={{ p: 4, width: '100%' }}>
           <Typography variant="h4" gutterBottom>Login</Typography>

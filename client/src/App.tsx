@@ -4,6 +4,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
+import Canvas from './pages/Canvas';
 
 function App() {
   return (
@@ -20,7 +21,16 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/canvas/:id"
+            element={
+              <ProtectedRoute>
+                <Canvas />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

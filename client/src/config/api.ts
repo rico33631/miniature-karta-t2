@@ -33,7 +33,27 @@ export const authApi = {
 
   getCurrentUser: async () => {
     const { data } = await api.get('/auth/me');
-    console.log('Current user data:', data.drawings);
-    return data.user;
+    return data;
+  },
+};
+
+export const canvasApi = {
+  getById: async (id: string) => {
+    const { data } = await api.get(`/canvases/${id}`); 
+    return data.canvas;
+  },
+
+  create: async (drawing_name: string) => {
+    const { data } = await api.post('/canvases', { drawing_name }); 
+    return data.canvas;
+  },
+
+  update: async (id: string, snapshot: any, drawing_name?: string) => { 
+    const { data } = await api.patch(`/canvases/${id}`, { snapshot, drawing_name }); 
+    return data.canvas;
+  },
+
+  delete: async (id: string) => {
+    await api.delete(`/canvases/${id}`); 
   },
 };

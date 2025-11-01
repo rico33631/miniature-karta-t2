@@ -1,0 +1,279 @@
+import { Tldraw, createTLStore, loadSnapshot, TLStore, Editor } from 'tldraw';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import axios from 'axios';
+import { v4 as uuidv4 } from 'uuid';
+import type { Drawing } from '../types/drawing';
+import { 
+  Button, 
+  Card, 
+  CardContent, 
+  Typography, 
+  Box,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemText,
+  CircularProgress,
+  Chip
+} from '@mui/material';
+import { Add as AddIcon, Save as SaveIcon } from '@mui/icons-material';
+import 'tldraw/tldraw.css';
+
+const USER_ID = 'SAU';
+
+export default function TldrawEditor() {
+  const [store, setStore] = useState<TLStore | undefined>(undefined);
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [drawingList, setDrawingList] = useState<Drawing[]>([]);
+  const [currentDrawingId, setCurrentDrawingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState<boolean>(false);
+  
+  const autoSaveTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const fetchDrawings = async () => {
+      try {
+        const response = await axios.get(`http://localhost:3000/api/drawings/list/${USER_ID}`);
+        setDrawingList(response.data.drawings);
+        
+        if (response.data.drawings.length > 0) {
+          console.log('First drawing ID:', response.data.drawings[0].id);
+        } else {
+          console.log('No drawings found');
+          setCurrentDrawingId(uuidv4());
+        }
+      } catch (error) {
+        console.error('Error fetching drawings:', error);
+      }
+    };
+
+    fetchDrawings();
+  }, []);
+
+  useEffect(() => {
+    if (!currentDrawingId) return;
+
+    const loadDrawing = async () => {
+      const newStore = createTLStore();
+
+      try {
+        const response = await axios.get(
+          `http://localhost:3000/api/drawings/load/${currentDrawingId}`
+        );
+        loadSnapshot(newStore, response.data.drawing.snapshot);
+        console.log('Loaded from database');
+      } catch (error) {
+        console.log('Starting with empty drawing');
+      }
+
+      setStore(newStore);
+    };
+
+    loadDrawing();
+  }, [currentDrawingId]);
+
+  const saveToDatabase = useCallback(async () => {
+    if (!editor || !currentDrawingId) return;
+
+    setSaving(true);
+
+    try {
+      const snapshot = editor.getSnapshot();
+      
+      await axios.post('http://localhost:3000/api/drawings/save', {
+        userId: USER_ID,
+        drawingId: currentDrawingId,
+        snapshot: snapshot,
+        drawingName: 'My Drawing'
+      });
+      
+      console.log('Saved to database');
+    } catch (error) {
+      console.error('Save error:', error);
+    } finally {
+      setSaving(false);
+    }
+  }, [editor, currentDrawingId]);
+
+  useEffect(() => {
+    if (!editor) return;
+
+    const handleChange = () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+      autoSaveTimerRef.current = window.setTimeout(() => {
+        saveToDatabase();
+      }, 2000);
+    };
+
+    const cleanup = editor.store.listen(handleChange);
+
+    return () => {
+      cleanup();
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [editor, saveToDatabase]);
+
+  const handleManualSave = () => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    saveToDatabase();
+  };
+
+  const loadDrawing = (drawingId: string) => {
+    setCurrentDrawingId(drawingId);
+  };
+
+  const createNewDrawing = () => {
+    const newId = uuidv4();
+    setCurrentDrawingId(newId);
+  };
+
+  return (
+    <Box sx={{ display: 'flex', height: '100vh', bgcolor: 'grey.50' }}>
+      {/* Sidebar */}
+      <Box sx={{ 
+        width: 280, 
+        bgcolor: 'white', 
+        borderRight: 1, 
+        borderColor: 'divider',
+        display: 'flex',
+        flexDirection: 'column',
+        boxShadow: 1
+      }}>
+        {/* Header */}
+        <Box sx={{ p: 3, borderBottom: 1, borderColor: 'divider' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+            <Typography variant="h6" fontWeight="bold">
+              My Drawings
+            </Typography>
+            <Chip label={drawingList.length} size="small" color="primary" />
+          </Box>
+          <Button 
+            variant="contained" 
+            fullWidth 
+            startIcon={<AddIcon />}
+            onClick={createNewDrawing}
+          >
+            New Drawing
+          </Button>
+        </Box>
+
+        {/* Drawing List */}
+        <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+          {drawingList.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 6, px: 3 }}>
+              <AddIcon sx={{ fontSize: 48, color: 'grey.400', mb: 2 }} />
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                No drawings yet
+              </Typography>
+              <Typography variant="caption" color="text.disabled">
+                Create your first drawing to get started
+              </Typography>
+            </Box>
+          ) : (
+            <List sx={{ p: 2 }}>
+              {drawingList.map((drawing) => (
+                <ListItem key={drawing.id} disablePadding sx={{ mb: 1 }}>
+                  <Card 
+                    sx={{ 
+                      width: '100%',
+                      cursor: 'pointer',
+                      border: currentDrawingId === drawing.id ? 2 : 1,
+                      borderColor: currentDrawingId === drawing.id ? 'primary.main' : 'divider',
+                      bgcolor: currentDrawingId === drawing.id ? 'primary.50' : 'white',
+                      '&:hover': {
+                        boxShadow: 3
+                      }
+                    }}
+                  >
+                    <ListItemButton onClick={() => loadDrawing(drawing.id)}>
+                      <ListItemText
+                        primary={
+                          <Typography variant="body1" fontWeight="medium" noWrap>
+                            {drawing.drawing_name}
+                          </Typography>
+                        }
+                        secondary={
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
+                            <Typography variant="caption" color="text.secondary">
+                              {new Date(drawing.updated_at).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
+                              })}
+                            </Typography>
+                            {currentDrawingId === drawing.id && (
+                              <Chip label="Active" size="small" color="primary" sx={{ height: 20 }} />
+                            )}
+                          </Box>
+                        }
+                      />
+                    </ListItemButton>
+                  </Card>
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </Box>
+
+        {/* Footer */}
+        <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider', bgcolor: 'grey.50' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="caption" color="text.secondary">
+              User: {USER_ID}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {drawingList.length} drawings
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
+
+      {/* Main Canvas */}
+      <Box sx={{ flexGrow: 1, position: 'relative', bgcolor: 'white' }}>
+        <Tldraw store={store} onMount={setEditor} />
+        
+        {/* Save Button */}
+        <Box sx={{ position: 'absolute', top: 16, right: 16, zIndex: 1000 }}>
+          <Button
+            variant="contained"
+            size="large"
+            startIcon={saving ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />}
+            onClick={handleManualSave}
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </Box>
+
+        {/* Auto-save Indicator */}
+        {saving && (
+          <Box sx={{ 
+            position: 'absolute', 
+            bottom: 16, 
+            right: 16, 
+            zIndex: 1000,
+            bgcolor: 'grey.900',
+            color: 'white',
+            px: 2,
+            py: 1,
+            borderRadius: 2,
+            display: 'flex',
+            alignItems: 'center',
+            boxShadow: 3
+          }}>
+            <CircularProgress size={16} color="inherit" sx={{ mr: 1 }} />
+            <Typography variant="caption">Auto-saving...</Typography>
+          </Box>
+        )}
+      </Box>
+    </Box>
+  );
+}
